@@ -512,6 +512,7 @@ const PRESETS = [
 let reportPreset = "thisMonth";
 let reportFrom, reportTo;
 let reportParty = ""; // empty = all people; otherwise a search term (partial match)
+let showPartySuggestions = false;
 function rangeFor(preset) {
   const now = new Date(); const y = now.getFullYear(), m = now.getMonth();
   if (preset === "allTime") {
@@ -529,14 +530,39 @@ function openReport() {
   view = "report";
   reportPreset = "thisMonth";
   reportParty = "";
+  showPartySuggestions = false;
   [reportFrom, reportTo] = rangeFor("thisMonth");
   render();
 }
 function pickPreset(p) { reportPreset = p; if (p !== "custom") [reportFrom, reportTo] = rangeFor(p); render(); }
 function setReportFrom(v) { reportFrom = v; reportPreset = "custom"; render(); }
 function setReportTo(v) { reportTo = v; reportPreset = "custom"; render(); }
-function setReportParty(v) { reportParty = v; renderReportResultsOnly(); }
-function clearReportParty() { reportParty = ""; render(); }
+function setReportParty(v) { reportParty = v; renderReportResultsOnly(); renderPartySuggestions(); }
+function clearReportParty() {
+  reportParty = "";
+  const input = document.getElementById("partySearch");
+  if (input) input.value = "";
+  render();
+}
+function selectParty(name) {
+  reportParty = name;
+  const input = document.getElementById("partySearch");
+  if (input) input.value = name;
+  showPartySuggestions = false;
+  render();
+}
+function focusPartySearch() { showPartySuggestions = true; renderPartySuggestions(); }
+function blurPartySearchDelayed() { setTimeout(() => { showPartySuggestions = false; renderPartySuggestions(); }, 180); }
+function renderPartySuggestions() {
+  const el = document.getElementById("partySuggestions");
+  if (!el) return;
+  if (!showPartySuggestions) { el.style.display = "none"; el.innerHTML = ""; return; }
+  const q = reportParty.trim().toLowerCase();
+  const matches = allParties().filter((p) => !q || p.toLowerCase().includes(q)).slice(0, 8);
+  if (matches.length === 0) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "block";
+  el.innerHTML = matches.map((p) => `<div class="suggestitem" onclick="selectParty('${esc(p).replace(/'/g, "\\'")}')">${esc(p)}</div>`).join("");
+}
 function backToLedger() { view = "ledger"; render(); }
 
 function allParties() {
@@ -595,11 +621,12 @@ function renderReportPage() {
         <label>Search a person</label>
         <div class="searchwrap" style="width:100%;">
           ${icon("search", 14)}
-          <input id="partySearch" list="partylist" placeholder="Type a name to filter, e.g. Ramesh"
+          <input id="partySearch" placeholder="Type a name to filter, e.g. Ramesh" autocomplete="off"
             value="${esc(reportParty)}" oninput="setReportParty(this.value)"
+            onfocus="focusPartySearch()" onblur="blurPartySearchDelayed()"
             style="${reportParty ? "padding-right:30px;" : ""}" />
-          <datalist id="partylist">${parties.map((p) => `<option value="${esc(p)}"></option>`).join("")}</datalist>
           ${reportParty ? `<button onclick="clearReportParty()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:none;color:var(--navy-dim);cursor:pointer;padding:4px;display:flex;">${icon("x", 14)}</button>` : ""}
+          <div id="partySuggestions" class="suggestlist"></div>
         </div>
       </div>
       ` : ""}

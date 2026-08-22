@@ -77,7 +77,11 @@
   select.pill { padding: 8px 26px 8px 12px; font-weight: 600; color: var(--navy-dim); appearance: none; }
   .searchwrap { flex: 1; min-width: 140px; position: relative; display: flex; align-items: center; }
   .searchwrap input { border: none; background: transparent; padding: 8px 10px 8px 30px; font-size: 13px; width: 100%; border-radius: 999px; }
-  .searchwrap svg { position: absolute; left: 10px; opacity: 0.4; }
+  .searchwrap svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); opacity: 0.4; pointer-events: none; }
+  .suggestlist { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid var(--navy-faint); border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.12); z-index: 20; max-height: 220px; overflow-y: auto; display: none; }
+  .suggestitem { padding: 10px 14px; font-size: 14px; cursor: pointer; border-bottom: 1px solid var(--navy-faint); }
+  .suggestitem:last-child { border-bottom: none; }
+  .suggestitem:active { background: var(--navy-faint); }
 
   .empty { text-align: center; padding: 60px 0; opacity: 0.4; }
 

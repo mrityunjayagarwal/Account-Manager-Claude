@@ -502,6 +502,7 @@ function renderSettingsModal() {
 
 /* ===================== Reports ===================== */
 const PRESETS = [
+  { id: "allTime", label: "All time" },
   { id: "thisMonth", label: "This month" },
   { id: "lastMonth", label: "Last month" },
   { id: "thisQuarter", label: "This quarter" },
@@ -510,8 +511,14 @@ const PRESETS = [
 ];
 let reportPreset = "thisMonth";
 let reportFrom, reportTo;
+let reportParty = ""; // empty = all people; otherwise a search term (partial match)
 function rangeFor(preset) {
   const now = new Date(); const y = now.getFullYear(), m = now.getMonth();
+  if (preset === "allTime") {
+    if (txns.length === 0) return [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))];
+    const dates = txns.map((t) => t.date).sort();
+    return [dates[0], todayStr()];
+  }
   if (preset === "thisMonth") return [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))];
   if (preset === "lastMonth") return [ymd(new Date(y, m - 1, 1)), ymd(new Date(y, m, 0))];
   if (preset === "thisQuarter") { const qs = Math.floor(m / 3) * 3; return [ymd(new Date(y, qs, 1)), ymd(new Date(y, qs + 3, 0))]; }
@@ -521,17 +528,89 @@ function rangeFor(preset) {
 function openReport() {
   view = "report";
   reportPreset = "thisMonth";
+  reportParty = "";
   [reportFrom, reportTo] = rangeFor("thisMonth");
   render();
 }
 function pickPreset(p) { reportPreset = p; if (p !== "custom") [reportFrom, reportTo] = rangeFor(p); render(); }
 function setReportFrom(v) { reportFrom = v; reportPreset = "custom"; render(); }
 function setReportTo(v) { reportTo = v; reportPreset = "custom"; render(); }
+function setReportParty(v) { reportParty = v; renderReportResultsOnly(); }
+function clearReportParty() { reportParty = ""; render(); }
 function backToLedger() { view = "ledger"; render(); }
 
-function renderReportPage() {
-  const rows = txns.filter((t) => t.date >= reportFrom && t.date <= reportTo)
+function allParties() {
+  const set = new Set();
+  txns.forEach((t) => { if (t.party && t.party.trim()) set.add(t.party.trim()); });
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function reportRows() {
+  const q = reportParty.trim().toLowerCase();
+  return txns.filter((t) => t.date >= reportFrom && t.date <= reportTo)
+    .filter((t) => !q || (t.party || "").toLowerCase().includes(q))
     .sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : a.createdAt - b.createdAt));
+}
+
+function renderReportResultsOnly() {
+  const el = document.getElementById("reportResults");
+  if (el) el.innerHTML = renderReportResultsHTML();
+}
+
+function renderReportPage() {
+  const parties = allParties();
+  return `
+    <header class="top no-print">
+      <div>
+        <button class="backlink" onclick="backToLedger()">${icon("back", 15)} Back to ledger</button>
+        <h1 class="serif">Reports</h1>
+      </div>
+      <div class="headerbtns">
+        <button class="iconbtn" onclick="downloadCSV()" aria-label="Download CSV" style="width:auto;padding:0 12px;background:var(--navy);color:#fff;gap:6px;display:flex;">${icon("download", 15)}<span style="font-size:13px;font-weight:600;">CSV</span></button>
+        <button class="iconbtn" onclick="window.print()" aria-label="Print">${icon("printer", 16)}</button>
+      </div>
+    </header>
+
+    <header class="top no-print">
+      <div>
+        <button class="backlink" onclick="backToLedger()">${icon("back", 15)} Back to ledger</button>
+        <h1 class="serif">Reports</h1>
+      </div>
+      <div class="headerbtns">
+        <button class="iconbtn" onclick="downloadCSV()" aria-label="Download CSV" style="width:auto;padding:0 12px;background:var(--navy);color:#fff;gap:6px;display:flex;">${icon("download", 15)}<span style="font-size:13px;font-weight:600;">CSV</span></button>
+        <button class="iconbtn" onclick="window.print()" aria-label="Print">${icon("printer", 16)}</button>
+      </div>
+    </header>
+
+    <div class="card no-print">
+      <div class="presetbar">
+        ${PRESETS.map((p) => `<button class="presetbtn ${reportPreset === p.id ? "active" : ""}" onclick="pickPreset('${p.id}')">${p.label}</button>`).join("")}
+      </div>
+      <div class="grid2">
+        <div class="field"><label>From</label><input type="date" value="${reportFrom}" max="${reportTo}" onchange="setReportFrom(this.value)"/></div>
+        <div class="field"><label>To</label><input type="date" value="${reportTo}" min="${reportFrom}" onchange="setReportTo(this.value)"/></div>
+      </div>
+      ${parties.length > 0 ? `
+      <div class="field" style="margin-top:10px;">
+        <label>Search a person</label>
+        <div class="searchwrap" style="width:100%;">
+          ${icon("search", 14)}
+          <input id="partySearch" list="partylist" placeholder="Type a name to filter, e.g. Ramesh"
+            value="${esc(reportParty)}" oninput="setReportParty(this.value)"
+            style="${reportParty ? "padding-right:30px;" : ""}" />
+          <datalist id="partylist">${parties.map((p) => `<option value="${esc(p)}"></option>`).join("")}</datalist>
+          ${reportParty ? `<button onclick="clearReportParty()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:none;color:var(--navy-dim);cursor:pointer;padding:4px;display:flex;">${icon("x", 14)}</button>` : ""}
+        </div>
+      </div>
+      ` : ""}
+    </div>
+
+    <div id="reportResults">${renderReportResultsHTML()}</div>
+  `;
+}
+
+function renderReportResultsHTML() {
+  const rows = reportRows();
   const received = rows.filter((t) => t.type === "received").reduce((s, t) => s + total(t), 0);
   const paid = rows.filter((t) => t.type === "paid").reduce((s, t) => s + total(t), 0);
   const bal = balances();
@@ -554,30 +633,10 @@ function renderReportPage() {
   const nameOf = (id) => (accounts.find((a) => a.id === id) || {}).name || "Deleted account";
 
   return `
-    <header class="top no-print">
-      <div>
-        <button class="backlink" onclick="backToLedger()">${icon("back", 15)} Back to ledger</button>
-        <h1 class="serif">Reports</h1>
-      </div>
-      <div class="headerbtns">
-        <button class="iconbtn" onclick="downloadCSV()" aria-label="Download CSV" style="width:auto;padding:0 12px;background:var(--navy);color:#fff;gap:6px;display:flex;">${icon("download", 15)}<span style="font-size:13px;font-weight:600;">CSV</span></button>
-        <button class="iconbtn" onclick="window.print()" aria-label="Print">${icon("printer", 16)}</button>
-      </div>
-    </header>
-
-    <div class="card no-print">
-      <div class="presetbar">
-        ${PRESETS.map((p) => `<button class="presetbtn ${reportPreset === p.id ? "active" : ""}" onclick="pickPreset('${p.id}')">${p.label}</button>`).join("")}
-      </div>
-      <div class="grid2">
-        <div class="field"><label>From</label><input type="date" value="${reportFrom}" max="${reportTo}" onchange="setReportFrom(this.value)"/></div>
-        <div class="field"><label>To</label><input type="date" value="${reportTo}" min="${reportFrom}" onchange="setReportTo(this.value)"/></div>
-      </div>
-    </div>
-
     <div style="margin-bottom:16px;">
-      <p class="eyebrow" style="color:#9A8449;">Statement period</p>
-      <p class="serif" style="font-size:20px;font-weight:700;margin:2px 0;">${fmtDate(reportFrom)} — ${fmtDate(reportTo)}</p>
+      <p class="eyebrow" style="color:#9A8449;">${reportParty ? "Statement with" : "Statement period"}</p>
+      ${reportParty ? `<p class="serif" style="font-size:22px;font-weight:700;margin:2px 0 0;">${esc(reportParty)}</p>` : ""}
+      <p class="serif" style="font-size:${reportParty ? "15px" : "20px"};font-weight:${reportParty ? "600" : "700"};margin:2px 0;${reportParty ? "opacity:.5;" : ""}">${fmtDate(reportFrom)} — ${fmtDate(reportTo)}</p>
       <p style="font-size:13px;opacity:.45;margin:0;">${rows.length} ${rows.length === 1 ? "entry" : "entries"}</p>
     </div>
 
@@ -635,7 +694,7 @@ function renderReportPage() {
 }
 
 function downloadCSV() {
-  const rows = txns.filter((t) => t.date >= reportFrom && t.date <= reportTo);
+  const rows = reportRows();
   const nameOf = (id) => (accounts.find((a) => a.id === id) || {}).name || "Deleted account";
   const csvEsc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [["Date", "Type", "Party", "Category", "Account", "Amount", "Entry total", "Note"].map(csvEsc).join(",")];
@@ -654,7 +713,8 @@ function downloadCSV() {
   const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = `ledger-${reportFrom}-to-${reportTo}.csv`; a.click();
+  const suffix = reportParty ? "-" + reportParty.trim().replace(/[^a-z0-9]+/gi, "-").toLowerCase() : "";
+  a.href = url; a.download = `ledger-${reportFrom}-to-${reportTo}${suffix}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
 

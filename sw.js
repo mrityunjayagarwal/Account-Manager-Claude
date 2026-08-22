@@ -1,5 +1,5 @@
-const CACHE = "ledger-v1";
-const ASSETS = ["./", "./index.html", "./app.js", "./manifest.json", "./icon.svg"];
+const CACHE = "ledger-v4";
+const ASSETS = ["./", "./index.html", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-192-maskable.png", "./icon-512-maskable.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));

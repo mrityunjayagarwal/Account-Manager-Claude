@@ -136,10 +136,11 @@
   .typetoggle button.active.paid { background: var(--red); color: #fff; }
   .splitrow { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
   .splitrow select { flex: 1; }
+  .splitrow select { flex: 1; min-width: 0; }
   .splitamt { position: relative; width: 130px; flex-shrink: 0; }
   .splitamt span { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); opacity: 0.4; font-size: 13px; }
-  .splitamt input { padding-left: 22px; }
-  .rmbtn { border: none; background: transparent; color: rgba(27,42,74,0.4); cursor: pointer; padding: 6px; }
+  .splitamt input { padding-left: 22px; width: 100%; box-sizing: border-box; }
+  .rmbtn { border: none; background: transparent; color: rgba(27,42,74,0.4); cursor: pointer; padding: 6px; flex-shrink: 0; }
   .addsplit { border: none; background: transparent; color: rgba(27,42,74,0.7); font-weight: 600; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 0; }
   .sumline { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .sumline .lbl { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.5; }
@@ -156,7 +157,7 @@
   .settingrow input[type=text] { flex: 1; }
   .settingrow .amt { width: 120px; position: relative; }
   .settingrow .amt span { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); opacity: 0.4; font-size: 13px; }
-  .settingrow .amt input { padding-left: 22px; }
+  .settingrow .amt input { padding-left: 22px; width: 100%; box-sizing: border-box; }
   .divider { border: none; border-top: 1px solid var(--navy-faint); margin: 18px 0; }
   .backupbtn { width: 100%; border: 1px solid var(--navy-faint); background: #fff; border-radius: 12px; padding: 12px; font-weight: 600; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; color: var(--navy); }
   .backupbtn.primary { background: var(--navy); color: #fff; border: none; }

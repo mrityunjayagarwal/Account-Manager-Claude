@@ -298,6 +298,7 @@ function setFormType(t) { modal.type = t; refreshModal(); }
 function setFormField(field, value) { modal[field] = value; } // no re-render needed; DOM already shows typed value
 function updateSplitField(i, field, value) {
   modal.splits[i][field] = value;
+  if (field === "accountId") { refreshModal(); return; } // other rows' dropdown options depend on this
   const sumEl = document.getElementById("formSum");
   if (sumEl) sumEl.textContent = (modal.type === "received" ? "+" : "−") + inr(formSum());
   const btn = document.getElementById("saveBtnLabel");
@@ -450,14 +451,18 @@ function renderFormModal() {
             <span class="lbl">${isIn ? "Which accounts received it" : "Which accounts it went from"}</span>
             <span class="val" id="formSum" style="color:${isIn ? "var(--green)" : "var(--red)"}">${isIn ? "+" : "−"}${inr(sum)}</span>
           </div>
-          ${modal.splits.map((s, i) => `
+          ${modal.splits.map((s, i) => {
+            const usedElsewhere = new Set(modal.splits.filter((_, idx) => idx !== i).map((x) => x.accountId));
+            const availableAccounts = accounts.filter((a) => !usedElsewhere.has(a.id) || a.id === s.accountId);
+            return `
             <div class="splitrow">
               <select onchange="updateSplitField(${i},'accountId',this.value)">
-                ${accounts.map((a) => `<option value="${a.id}" ${a.id === s.accountId ? "selected" : ""}>${esc(a.name)}</option>`).join("")}
+                ${availableAccounts.map((a) => `<option value="${a.id}" ${a.id === s.accountId ? "selected" : ""}>${esc(a.name)}</option>`).join("")}
               </select>
               <div class="splitamt"><span>₹</span><input type="number" min="0" inputmode="decimal" placeholder="0" value="${esc(s.amount)}" oninput="updateSplitField(${i},'amount',this.value)"/></div>
               <button class="rmbtn" ${modal.splits.length === 1 ? "disabled style='opacity:.25'" : ""} onclick="removeSplitRow(${i})">${icon("trash", 15)}</button>
-            </div>`).join("")}
+            </div>`;
+          }).join("")}
           ${modal.splits.length < accounts.length ? `<button class="addsplit" onclick="addSplitRow()">${icon("plus", 14)} Split across another account</button>` : ""}
         </div>
         <div class="field"><label>Note (optional)</label><textarea rows="2" oninput="setFormField('note', this.value)">${esc(modal.note)}</textarea></div>

@@ -344,6 +344,17 @@ function openSettings() {
   render();
 }
 function setSettingField(i, field, value) { modal.accounts[i][field] = value; }
+function addSettingAccount() {
+  modal.accounts.push({ id: uid(), name: "New account", type: "bank", opening: "0" });
+  refreshModal();
+}
+function removeSettingAccount(i) {
+  if (modal.accounts.length <= 1) return;
+  const name = modal.accounts[i].name || "this account";
+  if (!confirm(`Remove "${name}"? Its past entries will stay in history (shown as "Deleted account"), but its balance will drop out of your totals.`)) return;
+  modal.accounts.splice(i, 1);
+  refreshModal();
+}
 function saveSettings() {
   accounts = modal.accounts.map((a) => ({ ...a, name: a.name.trim() || "Untitled", opening: Number(a.opening) || 0 }));
   saveAccounts();
@@ -472,14 +483,19 @@ function renderSettingsModal() {
       </div>
       <div class="modalbody">
         <div>
-          <p style="font-size:13px;opacity:.55;margin:0 0 10px;">Rename your accounts, and set an opening balance if you're starting mid-way.</p>
+          <p style="font-size:13px;opacity:.55;margin:0 0 10px;">Rename your accounts, set an opening balance if you're starting mid-way, or add/remove accounts entirely.</p>
           ${modal.accounts.map((a, i) => `
             <div class="settingrow">
-              ${acctIcon(a, 16)}
+              <select onchange="setSettingField(${i},'type',this.value)" style="width:64px;padding:9px 4px;border-radius:10px;border:1px solid var(--navy-faint);background:#fff;font-size:18px;text-align:center;flex-shrink:0;">
+                <option value="bank" ${a.type === "bank" ? "selected" : ""}>🏦</option>
+                <option value="cash" ${a.type === "cash" ? "selected" : ""}>💵</option>
+              </select>
               <input type="text" value="${esc(a.name)}" oninput="setSettingField(${i},'name',this.value)"/>
               <div class="amt"><span>₹</span><input type="number" value="${esc(a.opening)}" oninput="setSettingField(${i},'opening',this.value)"/></div>
+              <button class="rmbtn" ${modal.accounts.length <= 1 ? "disabled style='opacity:.25'" : ""} onclick="removeSettingAccount(${i})">${icon("trash", 15)}</button>
             </div>`).join("")}
-          <button class="savebtn neutral" style="margin-top:6px;" onclick="saveSettings()">${icon("check", 15)} Save accounts</button>
+          <button class="addsplit" style="margin:4px 0 14px;" onclick="addSettingAccount()">${icon("plus", 14)} Add another account</button>
+          <button class="savebtn neutral" onclick="saveSettings()">${icon("check", 15)} Save accounts</button>
         </div>
 
         <hr class="divider"/>
@@ -513,6 +529,9 @@ let reportPreset = "thisMonth";
 let reportFrom, reportTo;
 let reportParty = ""; // empty = all people; otherwise a search term (partial match)
 let showPartySuggestions = false;
+let reportCategory = ""; // empty = all categories; otherwise a search term (partial match)
+let showCategorySuggestions = false;
+let selectedReportAccounts = new Set(); // ids of accounts included in the statement
 function rangeFor(preset) {
   const now = new Date(); const y = now.getFullYear(), m = now.getMonth();
   if (preset === "allTime") {
@@ -530,8 +549,21 @@ function openReport() {
   view = "report";
   reportPreset = "thisMonth";
   reportParty = "";
+  reportCategory = "";
   showPartySuggestions = false;
+  showCategorySuggestions = false;
+  selectedReportAccounts = new Set(accounts.map((a) => a.id));
   [reportFrom, reportTo] = rangeFor("thisMonth");
+  render();
+}
+function toggleReportAccount(id) {
+  if (selectedReportAccounts.has(id)) selectedReportAccounts.delete(id);
+  else selectedReportAccounts.add(id);
+  render();
+}
+function toggleAllReportAccounts() {
+  const allSelected = accounts.every((a) => selectedReportAccounts.has(a.id));
+  selectedReportAccounts = allSelected ? new Set() : new Set(accounts.map((a) => a.id));
   render();
 }
 function pickPreset(p) { reportPreset = p; if (p !== "custom") [reportFrom, reportTo] = rangeFor(p); render(); }
@@ -563,6 +595,34 @@ function renderPartySuggestions() {
   el.style.display = "block";
   el.innerHTML = matches.map((p) => `<div class="suggestitem" onclick="selectParty('${esc(p).replace(/'/g, "\\'")}')">${esc(p)}</div>`).join("");
 }
+
+function setReportCategory(v) { reportCategory = v; renderReportResultsOnly(); renderCategorySuggestions(); }
+function clearReportCategory() {
+  reportCategory = "";
+  const input = document.getElementById("categorySearch");
+  if (input) input.value = "";
+  render();
+}
+function selectCategory(name) {
+  reportCategory = name;
+  const input = document.getElementById("categorySearch");
+  if (input) input.value = name;
+  showCategorySuggestions = false;
+  render();
+}
+function focusCategorySearch() { showCategorySuggestions = true; renderCategorySuggestions(); }
+function blurCategorySearchDelayed() { setTimeout(() => { showCategorySuggestions = false; renderCategorySuggestions(); }, 180); }
+function renderCategorySuggestions() {
+  const el = document.getElementById("categorySuggestions");
+  if (!el) return;
+  if (!showCategorySuggestions) { el.style.display = "none"; el.innerHTML = ""; return; }
+  const q = reportCategory.trim().toLowerCase();
+  const matches = allCategories().filter((c) => !q || c.toLowerCase().includes(q)).slice(0, 8);
+  if (matches.length === 0) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "block";
+  el.innerHTML = matches.map((c) => `<div class="suggestitem" onclick="selectCategory('${esc(c).replace(/'/g, "\\'")}')">${esc(c)}</div>`).join("");
+}
+
 function backToLedger() { view = "ledger"; render(); }
 
 function allParties() {
@@ -571,10 +631,23 @@ function allParties() {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+function allCategories() {
+  const set = new Set();
+  txns.forEach((t) => set.add(t.category && t.category.trim() ? t.category.trim() : "Uncategorised"));
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+function matchedAmount(t) {
+  return t.splits.filter((s) => selectedReportAccounts.has(s.accountId)).reduce((sum, s) => sum + Number(s.amount || 0), 0);
+}
+
 function reportRows() {
   const q = reportParty.trim().toLowerCase();
+  const c = reportCategory.trim().toLowerCase();
   return txns.filter((t) => t.date >= reportFrom && t.date <= reportTo)
     .filter((t) => !q || (t.party || "").toLowerCase().includes(q))
+    .filter((t) => !c || (t.category && t.category.trim() ? t.category : "Uncategorised").toLowerCase().includes(c))
+    .filter((t) => t.splits.some((s) => selectedReportAccounts.has(s.accountId)))
     .sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : a.createdAt - b.createdAt));
 }
 
@@ -585,18 +658,8 @@ function renderReportResultsOnly() {
 
 function renderReportPage() {
   const parties = allParties();
+  const categories = allCategories();
   return `
-    <header class="top no-print">
-      <div>
-        <button class="backlink" onclick="backToLedger()">${icon("back", 15)} Back to ledger</button>
-        <h1 class="serif">Reports</h1>
-      </div>
-      <div class="headerbtns">
-        <button class="iconbtn" onclick="downloadCSV()" aria-label="Download CSV" style="width:auto;padding:0 12px;background:var(--navy);color:#fff;gap:6px;display:flex;">${icon("download", 15)}<span style="font-size:13px;font-weight:600;">CSV</span></button>
-        <button class="iconbtn" onclick="window.print()" aria-label="Print">${icon("printer", 16)}</button>
-      </div>
-    </header>
-
     <header class="top no-print">
       <div>
         <button class="backlink" onclick="backToLedger()">${icon("back", 15)} Back to ledger</button>
@@ -630,6 +693,35 @@ function renderReportPage() {
         </div>
       </div>
       ` : ""}
+      ${categories.length > 0 ? `
+      <div class="field" style="margin-top:10px;">
+        <label>Search a category</label>
+        <div class="searchwrap" style="width:100%;">
+          ${icon("search", 14)}
+          <input id="categorySearch" placeholder="Type a category, e.g. Rent" autocomplete="off"
+            value="${esc(reportCategory)}" oninput="setReportCategory(this.value)"
+            onfocus="focusCategorySearch()" onblur="blurCategorySearchDelayed()"
+            style="${reportCategory ? "padding-right:30px;" : ""}" />
+          ${reportCategory ? `<button onclick="clearReportCategory()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:none;color:var(--navy-dim);cursor:pointer;padding:4px;display:flex;">${icon("x", 14)}</button>` : ""}
+          <div id="categorySuggestions" class="suggestlist"></div>
+        </div>
+      </div>
+      ` : ""}
+      <div class="field" style="margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <label style="margin:0;">Accounts included</label>
+          <button onclick="toggleAllReportAccounts()" style="border:none;background:none;color:#9A8449;font-weight:600;font-size:12px;cursor:pointer;padding:0;">
+            ${accounts.every((a) => selectedReportAccounts.has(a.id)) ? "Clear all" : "Select all"}
+          </button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${accounts.map((a) => `
+            <button onclick="toggleReportAccount('${a.id}')"
+              style="display:flex;align-items:center;gap:5px;border:1px solid var(--navy-faint);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;background:${selectedReportAccounts.has(a.id) ? "var(--navy)" : "#fff"};color:${selectedReportAccounts.has(a.id) ? "#fff" : "var(--navy-dim)"};">
+              ${selectedReportAccounts.has(a.id) ? icon("check", 12) : ""}${esc(a.name)}
+            </button>`).join("")}
+        </div>
+      </div>
     </div>
 
     <div id="reportResults">${renderReportResultsHTML()}</div>
@@ -638,33 +730,43 @@ function renderReportPage() {
 
 function renderReportResultsHTML() {
   const rows = reportRows();
-  const received = rows.filter((t) => t.type === "received").reduce((s, t) => s + total(t), 0);
-  const paid = rows.filter((t) => t.type === "paid").reduce((s, t) => s + total(t), 0);
+  const received = rows.filter((t) => t.type === "received").reduce((s, t) => s + matchedAmount(t), 0);
+  const paid = rows.filter((t) => t.type === "paid").reduce((s, t) => s + matchedAmount(t), 0);
   const bal = balances();
+  const shownAccounts = accounts.filter((a) => selectedReportAccounts.has(a.id));
 
   const byAccount = {};
-  accounts.forEach((a) => (byAccount[a.id] = { in: 0, out: 0 }));
+  shownAccounts.forEach((a) => (byAccount[a.id] = { in: 0, out: 0 }));
   rows.forEach((t) => t.splits.forEach((s) => {
     if (!byAccount[s.accountId]) return;
     if (t.type === "received") byAccount[s.accountId].in += Number(s.amount); else byAccount[s.accountId].out += Number(s.amount);
   }));
 
   const catMap = {};
-  rows.forEach((t) => { const k = (t.category || "Uncategorised") + "||" + t.type; catMap[k] = (catMap[k] || 0) + total(t); });
+  rows.forEach((t) => { const amt = matchedAmount(t); if (!amt) return; const k = (t.category || "Uncategorised") + "||" + t.type; catMap[k] = (catMap[k] || 0) + amt; });
   const byCategory = Object.entries(catMap).map(([k, v]) => { const [name, type] = k.split("||"); return { name, type, amount: v }; }).sort((a, b) => b.amount - a.amount);
 
   const monthMap = {};
-  rows.forEach((t) => { const k = t.date.slice(0, 7); if (!monthMap[k]) monthMap[k] = { in: 0, out: 0 }; if (t.type === "received") monthMap[k].in += total(t); else monthMap[k].out += total(t); });
+  rows.forEach((t) => { const amt = matchedAmount(t); if (!amt) return; const k = t.date.slice(0, 7); if (!monthMap[k]) monthMap[k] = { in: 0, out: 0 }; if (t.type === "received") monthMap[k].in += amt; else monthMap[k].out += amt; });
   const byMonth = Object.entries(monthMap).sort((a, b) => (a[0] > b[0] ? 1 : -1));
 
   const nameOf = (id) => (accounts.find((a) => a.id === id) || {}).name || "Deleted account";
 
+  if (shownAccounts.length === 0) {
+    return `<div class="empty">${icon("inbox", 30)}<p style="font-weight:600;margin:8px 0 2px;">No accounts selected</p><p style="font-size:13px;">Pick at least one account above to see a statement.</p></div>`;
+  }
+
+  const filterBits = [];
+  if (reportParty) filterBits.push(esc(reportParty));
+  if (reportCategory) filterBits.push(esc(reportCategory));
+  const heading = filterBits.length ? filterBits.join(" · ") : "";
+
   return `
     <div style="margin-bottom:16px;">
-      <p class="eyebrow" style="color:#9A8449;">${reportParty ? "Statement with" : "Statement period"}</p>
-      ${reportParty ? `<p class="serif" style="font-size:22px;font-weight:700;margin:2px 0 0;">${esc(reportParty)}</p>` : ""}
-      <p class="serif" style="font-size:${reportParty ? "15px" : "20px"};font-weight:${reportParty ? "600" : "700"};margin:2px 0;${reportParty ? "opacity:.5;" : ""}">${fmtDate(reportFrom)} — ${fmtDate(reportTo)}</p>
-      <p style="font-size:13px;opacity:.45;margin:0;">${rows.length} ${rows.length === 1 ? "entry" : "entries"}</p>
+      <p class="eyebrow" style="color:#9A8449;">${heading ? "Statement for" : "Statement period"}</p>
+      ${heading ? `<p class="serif" style="font-size:22px;font-weight:700;margin:2px 0 0;">${heading}</p>` : ""}
+      <p class="serif" style="font-size:${heading ? "15px" : "20px"};font-weight:${heading ? "600" : "700"};margin:2px 0;${heading ? "opacity:.5;" : ""}">${fmtDate(reportFrom)} — ${fmtDate(reportTo)}</p>
+      <p style="font-size:13px;opacity:.45;margin:0;">${rows.length} ${rows.length === 1 ? "entry" : "entries"}${shownAccounts.length < accounts.length ? " · " + shownAccounts.length + " of " + accounts.length + " accounts" : ""}</p>
     </div>
 
     <div class="statgrid" style="margin-bottom:20px;">
@@ -677,7 +779,7 @@ function renderReportResultsHTML() {
       <h2 class="serif" style="font-size:17px;margin:0 0 10px;">Account-wise movement</h2>
       <table class="rpt"><thead><tr><th>Account</th><th class="r">In</th><th class="r">Out</th><th class="r">Net</th><th class="r">Balance now</th></tr></thead>
       <tbody>
-        ${accounts.map((a) => { const d = byAccount[a.id] || { in: 0, out: 0 }; const net = d.in - d.out;
+        ${shownAccounts.map((a) => { const d = byAccount[a.id] || { in: 0, out: 0 }; const net = d.in - d.out;
           return `<tr><td style="font-weight:600;">${esc(a.name)}</td><td class="r" style="color:var(--green)">${d.in ? inr(d.in) : "—"}</td><td class="r" style="color:var(--red)">${d.out ? inr(d.out) : "—"}</td><td class="r" style="font-weight:700;color:${net >= 0 ? "var(--green)" : "var(--red)"}">${net === 0 ? "—" : (net > 0 ? "+" : "−") + inr(Math.abs(net))}</td><td class="r" style="opacity:.6;">${inr(bal[a.id])}</td></tr>`;
         }).join("")}
       </tbody></table>
@@ -714,7 +816,7 @@ function renderReportResultsHTML() {
               <p style="font-size:13px;font-weight:600;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(t.party) || "—"}</p>
               <p style="font-size:11px;opacity:.45;margin:2px 0 0;">${fmtDate(t.date)}${t.category ? " · " + esc(t.category) : ""} · ${t.splits.map((s) => esc(nameOf(s.accountId)) + " " + inr(s.amount)).join(" + ")}</p>
             </div>
-            <p style="font-size:13px;font-weight:700;margin:0;flex-shrink:0;color:${t.type === "received" ? "var(--green)" : "var(--red)"}">${t.type === "received" ? "+" : "−"}${inr(total(t))}</p>
+            <p style="font-size:13px;font-weight:700;margin:0;flex-shrink:0;color:${t.type === "received" ? "var(--green)" : "var(--red)"}">${t.type === "received" ? "+" : "−"}${inr(matchedAmount(t))}</p>
           </div>`).join("")}
     </div>
   `;
@@ -724,12 +826,12 @@ function downloadCSV() {
   const rows = reportRows();
   const nameOf = (id) => (accounts.find((a) => a.id === id) || {}).name || "Deleted account";
   const csvEsc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const lines = [["Date", "Type", "Party", "Category", "Account", "Amount", "Entry total", "Note"].map(csvEsc).join(",")];
+  const lines = [["Date", "Type", "Party", "Category", "Account", "Amount", "Entry total (selected accounts)", "Note"].map(csvEsc).join(",")];
   let received = 0, paid = 0;
   rows.forEach((t) => {
-    const tot = total(t);
+    const tot = matchedAmount(t);
     if (t.type === "received") received += tot; else paid += tot;
-    t.splits.forEach((s) => {
+    t.splits.filter((s) => selectedReportAccounts.has(s.accountId)).forEach((s) => {
       lines.push([t.date, t.type === "received" ? "Received" : "Paid", t.party, t.category || "Uncategorised", nameOf(s.accountId), Number(s.amount), tot, t.note].map(csvEsc).join(","));
     });
   });
@@ -740,7 +842,10 @@ function downloadCSV() {
   const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const suffix = reportParty ? "-" + reportParty.trim().replace(/[^a-z0-9]+/gi, "-").toLowerCase() : "";
+  const bits = [];
+  if (reportParty) bits.push(reportParty.trim());
+  if (reportCategory) bits.push(reportCategory.trim());
+  const suffix = bits.length ? "-" + bits.join("-").replace(/[^a-z0-9]+/gi, "-").toLowerCase() : "";
   a.href = url; a.download = `ledger-${reportFrom}-to-${reportTo}${suffix}.csv`; a.click();
   URL.revokeObjectURL(url);
 }
